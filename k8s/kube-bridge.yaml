@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kube-bridge-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kube-bridge
+  namespace: kube-bridge-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-bridge
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["servicecidrs"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-bridge
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kube-bridge
+subjects:
+  - kind: ServiceAccount
+    name: kube-bridge
+    namespace: kube-bridge-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-bridge
+  namespace: kube-bridge-system
+data:
+  # The LAN-routable prefix under which ClusterIPs are aliased. It must be at
+  # least as wide as the service CIDR and must not overlap it.
+  BRIDGE_PREFIX: "fd00:b1d6::/108"
+  # <service>.<namespace>.<DNS_ZONE> resolves to the alias. Empty disables DNS.
+  DNS_ZONE: "kube-bridge.example"
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kube-bridge
+  namespace: kube-bridge-system
+spec:
+  selector:
+    matchLabels:
+      app: kube-bridge
+  template:
+    metadata:
+      labels:
+        app: kube-bridge
+    spec:
+      serviceAccountName: kube-bridge
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      priorityClassName: system-node-critical
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: kube-bridge
+          image: kube-bridge:latest
+          args:
+            - --prefix=$(BRIDGE_PREFIX)
+            - --dns-zone=$(DNS_ZONE)
+            - --dns-listen=[$(HOST_IP)]:53
+            - -v
+          env:
+            - name: BRIDGE_PREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: kube-bridge
+                  key: BRIDGE_PREFIX
+            - name: DNS_ZONE
+              valueFrom:
+                configMapKeyRef:
+                  name: kube-bridge
+                  key: DNS_ZONE
+            - name: HOST_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN", "NET_RAW"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi

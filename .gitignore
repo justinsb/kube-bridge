@@ -1,0 +1,4 @@
+/kube-bridge
+/bin/
+/dist/
+*.test
