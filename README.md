@@ -60,16 +60,24 @@ with `NET_ADMIN` and `NET_RAW`. Every node advertises the prefix; hosts pick
 one of them as the next hop. A Deployment with one replica works too and
 costs one less process per node, at the price of a single entry point.
 
-Then, on a Mac, send the zone to a node:
+The resolver is reached the same way as everything else: the manifest
+includes a ClusterIP Service for kube-bridge on port 53, and its alias under
+the bridge prefix is the nameserver address. Pinning `spec.clusterIP` gives
+a memorable one; with service CIDR `fd00:5e4f:ce::/108`, bridge prefix
+`fd00:b1d6::/108` and `clusterIP: fd00:5e4f:ce::53` the nameserver is
+`fd00:b1d6::53`. Queries to it are load-balanced across the nodes by the
+data plane like any other Service.
+
+Then, on a Mac, send the zone there:
 
 ```
 sudo mkdir -p /etc/resolver
-printf 'nameserver %s\n' 2001:db8::7 | sudo tee /etc/resolver/kube-bridge.example
+printf 'nameserver fd00:b1d6::53\n' | sudo tee /etc/resolver/kube-bridge.example
 ```
 
 and `nginx.default.kube-bridge.example` resolves and connects. On
 Linux, use a per-domain forward in systemd-resolved or dnsmasq. Delegating
-the zone from public DNS to the nodes' addresses makes every device on the
+the zone from public DNS to the nameserver alias makes every device on the
 LAN work with no local configuration.
 
 ## Flags
@@ -98,7 +106,8 @@ IPv6-only pods) from a Mac on the same LAN:
 - TCP and UDP DNS queries to the CoreDNS alias are answered;
 - a flow routed through one node to a pod on another node works, so the
   masquerade path is doing its job;
-- the kube-bridge DNS zone resolves `<service>.<namespace>.<zone>`.
+- the kube-bridge DNS zone resolves `<service>.<namespace>.<zone>`, queried
+  through the resolver's own alias over UDP and TCP.
 
 Known gaps, roughly in the order they should be fixed:
 

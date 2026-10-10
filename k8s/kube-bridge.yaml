@@ -99,3 +99,26 @@ spec:
             requests:
               cpu: 10m
               memory: 32Mi
+---
+# The resolver is reached through kube-bridge itself: this Service's alias
+# under the bridge prefix is the nameserver address LAN hosts use. Pin
+# spec.clusterIP to an address in your service CIDR for a memorable alias.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kube-bridge
+  namespace: kube-bridge-system
+spec:
+  type: ClusterIP
+  ipFamilies: [IPv6]
+  selector:
+    app: kube-bridge
+  ports:
+    - name: dns-udp
+      port: 53
+      targetPort: 53
+      protocol: UDP
+    - name: dns-tcp
+      port: 53
+      targetPort: 53
+      protocol: TCP
